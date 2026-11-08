@@ -6,6 +6,7 @@ Rust Workspace向けのGitHub Actions品質保証テンプレートです。
 
 | 検査 | PR・main push・merge queue | 毎週月曜 02:17 UTC | 手動 |
 | --- | --- | --- | --- |
+| Actions lockfileの整合性・依存元検証 | 実行 | 実行 | 実行 |
 | rustfmt・Clippy・cargo-deny | 実行 | 実行 | 実行 |
 | ビルド・Nextest・doctest（default / all features） | 実行 | 実行 | 実行 |
 | Kani・証明ハーネス最低件数 | 実行 | 実行 | 実行 |
@@ -21,6 +22,7 @@ Miri・Kaniを入力で無効化した場合だけ、そのジョブのスキッ
 ```text
 .github/workflows/quality.yml                イベント・実行ポリシー
 .github/workflows/rust-quality-reusable.yml  workflow_call対応の検査本体
+.github/workflows/actions.lock              Actionと推移的依存の固定
 .github/workflows/blaze.yml                  既存の手動ビルド実験（独立）
 .github/dependabot.yml                       Action・Cargo依存の週次更新
 deny.toml                                   依存監査ポリシー
@@ -31,6 +33,9 @@ src/lib.rs                                  実装・テスト・Kani証明の�
 
 1. `quality.yml`、`rust-quality-reusable.yml`、`deny.toml`をコピーします。
    必要なら`.github/dependabot.yml`もコピーしてください。
+   コピー先ですべてのWorkflowを配置した後、`gh actions-lock`を実行し、
+   生成された`.github/workflows/actions.lock`とWorkflowの変更をコミットします。
+   `actions.lock`は手編集せず、コピー元のものをそのまま流用しないでください。
    `main`以外を使う場合は呼び出し側の`push.branches`を変更します。
 2. `Cargo.lock`をコミットします。`deny.toml`のライセンス許可一覧と依存元の制限を、
    プロジェクトの方針に合わせてレビューしてください。既知の脆弱性は例外なしで検査し、
@@ -105,11 +110,19 @@ Kani一覧の仕様は[公式RFC](https://model-checking.github.io/kani/rfc/rfcs
 - ビルド時間のHTMLレポートとKaniの証明一覧を14日間Artifactに保存します。
   `always()`で失敗時も保存を試みますが、ファイル生成前の失敗ではArtifactはありません。
 - `contents: read`のみを付与し、checkoutの認証情報を残しません。
-  外部ActionはフルSHA、Runnerは`ubuntu-24.04`、toolchainはバージョンで固定しています。
+  外部Actionは可読なバージョンタグを使い、`actions.lock`にフルSHAを固定しています。
+  Runnerは`ubuntu-24.04`、toolchainはバージョンで固定しています。
   `pull_request_target`や外部サービスの秘密情報は使いません。
 - 新しいPR更新では前のPR実行をキャンセルし、push・週次・手動実行はキャンセルしません。
 - DependabotはActionとCargo依存を更新します。YAML内のツールバージョン・Rust・nightlyは
   手動更新が必要です。Kani更新時はJSONスキーマも再確認してください。
+- `actions.lock`は公式の`gh actions-lock`で生成し、Actionの推移的依存も固定します。
+  `uses:`の追加・変更時には再生成し、差分をレビューしてください。
+  CIでは固定版`v0.4.1`の`gh actions-lock --verify`で全Workflowの網羅性と依存元を検証し、
+  失敗を`Quality gate`へ反映します。ローカルでは`--verify-local`でネットワークなしの
+  網羅性確認もできます。依存先のコード自体の安全性を保証する機能ではありません。
+  外部リポジトリへの再利用Workflow呼び出しはlockfileの固定対象外なので、フルSHAを指定します。
+  詳細は[GitHub公式のlockfile仕様](https://docs.github.com/en/actions/concepts/security/workflow-dependency-lockfiles)を参照してください。
 - カバレッジ、mutation testing、sccache、mold、crate差分実行は標準構成に含めません。
   プロジェクトで必要な保証と計測結果に応じて追加してください。
 - 既存の`blaze.yml`は手動のビルド速度評価用として保持しています。必須チェックには指定しません。
@@ -138,6 +151,10 @@ cargo +1.99.1 kani --workspace --all-features
 # Miriコンポーネント導入後
 cargo +nightly-2026-10-25 miri test --workspace --lib --all-features --locked
 actionlint
+gh extension install github/gh-actions-lock --pin v0.4.1
+gh actions-lock                 # uses変更後の生成・更新
+gh actions-lock --verify        # ネットワークを含む完全な検査
+gh actions-lock --verify-local  # オフラインの網羅性検査
 ```
 
 本テンプレートの配置・ローカル検証と、GitHub-hosted Linux上の全ジョブ実行は別です。
