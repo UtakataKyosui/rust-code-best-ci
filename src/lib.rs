@@ -12,6 +12,22 @@ pub fn increment(value: u64) -> Option<u64> {
     }
 }
 
+// Verify the production function, rather than a separate copy of its logic.
+#[cfg(kani)]
+mod proofs {
+    use super::increment;
+
+    #[kani::proof]
+    fn increment_matches_mathematical_successor() {
+        let value: u64 = kani::any();
+        match increment(value) {
+            Some(next) => assert_eq!(u128::from(next), u128::from(value) + 1),
+            None => assert_eq!(value, u64::MAX),
+        }
+        assert_eq!(increment(value).is_none(), value == u64::MAX);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
