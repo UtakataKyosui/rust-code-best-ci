@@ -140,7 +140,7 @@ jobs:
         run: |
           cargo +"$RUST_TOOLCHAIN" metadata --locked --format-version 1 > /dev/null
           rm -f kani-list.json
-          cargo +"$RUST_TOOLCHAIN" kani list --workspace --all-features --format json
+          cargo +"$RUST_TOOLCHAIN" kani --workspace --all-features list --format json
       - name: Reject empty or unexpectedly reduced proof coverage
         shell: python
         run: |

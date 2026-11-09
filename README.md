@@ -145,7 +145,7 @@ cargo +1.99.1 deny --workspace --locked check
 # Kani対応環境で実行
 cargo +1.99.1 install kani-verifier --version 0.68.0 --locked
 cargo +1.99.1 kani setup
-cargo +1.99.1 kani list --workspace --all-features --format json
+cargo +1.99.1 kani --workspace --all-features list --format json
 cargo +1.99.1 kani --workspace --all-features
 
 # Miriコンポーネント導入後
