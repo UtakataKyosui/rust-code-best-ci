@@ -13,6 +13,14 @@ on:
         description: Run Miri checks
         type: boolean
         default: true
+      run_coverage:
+        description: Measure coverage
+        type: boolean
+        default: false
+      run_mutation:
+        description: Run mutation testing
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -27,3 +35,5 @@ jobs:
     with:
       run_formal: true
       run_deep: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_deep) }}
+      run_coverage: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_coverage) }}
+      run_mutation: ${{ github.event_name == 'workflow_dispatch' && inputs.run_mutation }}

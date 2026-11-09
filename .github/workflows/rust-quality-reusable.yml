@@ -17,6 +17,14 @@ on:
       run_deep:
         type: boolean
         default: false
+      run_coverage:
+        description: Measure line coverage with cargo-llvm-cov (slow, scheduled or manual)
+        type: boolean
+        default: false
+      run_mutation:
+        description: Run cargo-mutants to check that tests detect behavior changes (slow)
+        type: boolean
+        default: false
       minimum_harnesses:
         description: Minimum compiled Kani proof harness count (at least 1)
         type: number
@@ -195,10 +203,70 @@ jobs:
           cargo +"$MIRI_TOOLCHAIN" miri setup
           cargo +"$MIRI_TOOLCHAIN" miri test --workspace --lib --all-features --locked
 
+  coverage:
+    name: Coverage
+    if: inputs.run_coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Rust with LLVM tools
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component llvm-tools-preview --no-self-update
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          key: coverage-${{ inputs.rust_toolchain }}
+          save-if: false
+      - uses: taiki-e/install-action@v2.90.3
+        with:
+          tool: cargo-llvm-cov@0.9.1,nextest@0.9.151
+      - name: Measure coverage (informational, no threshold yet)
+        run: |
+          cargo +"$RUST_TOOLCHAIN" llvm-cov nextest --workspace --all-features --locked --lcov --output-path lcov.info
+          cargo +"$RUST_TOOLCHAIN" llvm-cov report --summary-only | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: coverage-lcov
+          path: lcov.info
+          if-no-files-found: ignore
+          retention-days: 14
+
+  mutation:
+    name: Mutation testing
+    if: inputs.run_mutation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          key: mutation-${{ inputs.rust_toolchain }}
+          save-if: false
+      - uses: taiki-e/install-action@v2.90.3
+        with:
+          tool: cargo-mutants@27.1.0,nextest@0.9.151
+      - name: Run mutants (missed mutants fail the job)
+        run: cargo +"$RUST_TOOLCHAIN" mutants --workspace --all-features --test-tool nextest --locked
+      - name: Upload mutation results
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: mutants-out
+          path: mutants.out/
+          if-no-files-found: ignore
+          retention-days: 14
+
   gate:
     name: Quality gate
     if: always()
-    needs: [lockfile, quality, tests, formal, deep]
+    needs: [lockfile, quality, tests, formal, deep, coverage, mutation]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -207,6 +275,8 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
           RUN_FORMAL: ${{ inputs.run_formal }}
           RUN_DEEP: ${{ inputs.run_deep }}
+          RUN_COVERAGE: ${{ inputs.run_coverage }}
+          RUN_MUTATION: ${{ inputs.run_mutation }}
         shell: python
         run: |
           import json
@@ -214,7 +284,8 @@ jobs:
 
           jobs = json.loads(os.environ["RESULTS"])
           expected = {"lockfile": "success", "quality": "success", "tests": "success"}
-          for job, flag in (("formal", "RUN_FORMAL"), ("deep", "RUN_DEEP")):
+          for job, flag in (("formal", "RUN_FORMAL"), ("deep", "RUN_DEEP"),
+                      ("coverage", "RUN_COVERAGE"), ("mutation", "RUN_MUTATION")):
               expected[job] = "success" if os.environ[flag] == "true" else "skipped"
           failures = [f"{job}: {jobs[job]['result']} (expected {result})"
                       for job, result in expected.items() if jobs[job]["result"] != result]
