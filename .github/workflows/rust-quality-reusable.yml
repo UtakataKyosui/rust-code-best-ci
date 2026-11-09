@@ -253,7 +253,7 @@ jobs:
         with:
           tool: cargo-mutants@27.1.0,nextest@0.9.151
       - name: Run mutants (missed mutants fail the job)
-        run: cargo +"$RUST_TOOLCHAIN" mutants --workspace --all-features --test-tool nextest --locked
+        run: cargo +"$RUST_TOOLCHAIN" mutants --workspace --all-features --test-tool nextest --cargo-arg=--locked
       - name: Upload mutation results
         if: always()
         uses: actions/upload-artifact@v4.6.2
