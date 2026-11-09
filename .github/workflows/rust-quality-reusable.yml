@@ -120,7 +120,7 @@ jobs:
           cargo +"$RUST_TOOLCHAIN" test --workspace --doc --locked "${features[@]}"
       - name: Upload build timings
         if: always()
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: cargo-timings-${{ matrix.features }}
           path: target/cargo-timings/
@@ -178,7 +178,7 @@ jobs:
           git diff --exit-code -- Cargo.lock
       - name: Upload proof inventory
         if: always()
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: kani-proof-inventory
           path: kani-list.json
@@ -227,7 +227,7 @@ jobs:
           cargo +"$RUST_TOOLCHAIN" llvm-cov report --summary-only | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: coverage-lcov
           path: lcov.info
@@ -256,7 +256,7 @@ jobs:
         run: cargo +"$RUST_TOOLCHAIN" mutants --workspace --all-features --test-tool nextest --cargo-arg=--locked
       - name: Upload mutation results
         if: always()
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: mutants-out
           path: mutants.out/
