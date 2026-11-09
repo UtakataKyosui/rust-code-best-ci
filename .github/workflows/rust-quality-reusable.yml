@@ -1,0 +1,223 @@
+name: Rust quality (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      rust_toolchain:
+        description: Rust version for formatting, linting and tests
+        type: string
+        default: '1.99.1'
+      miri_toolchain:
+        description: Dated nightly with the Miri component
+        type: string
+        default: nightly-2026-10-25
+      run_formal:
+        type: boolean
+        default: true
+      run_deep:
+        type: boolean
+        default: false
+      minimum_harnesses:
+        description: Minimum compiled Kani proof harness count (at least 1)
+        type: number
+        default: 1
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  RUST_BACKTRACE: '1'
+  RUST_TOOLCHAIN: ${{ inputs.rust_toolchain }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lockfile:
+    name: Verify Actions lockfile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install pinned lockfile verifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh extension install github/gh-actions-lock --pin v0.4.1
+      - name: Verify dependency coverage and upstream provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh actions-lock --verify
+
+  quality:
+    name: Format / Lint / Dependencies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Rust tooling
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt,clippy --no-self-update
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          key: quality-${{ inputs.rust_toolchain }}
+          save-if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+      - name: Check formatting
+        run: cargo +"$RUST_TOOLCHAIN" fmt --all -- --check
+      - name: Lint default and all features
+        run: |
+          cargo +"$RUST_TOOLCHAIN" clippy --workspace --all-targets --locked -- -D warnings
+          cargo +"$RUST_TOOLCHAIN" clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - uses: taiki-e/install-action@v2.90.3
+        with:
+          tool: cargo-deny@0.20.2
+      - name: Audit dependencies against the committed policy
+        run: cargo +"$RUST_TOOLCHAIN" deny --workspace --locked check
+
+  tests:
+    name: Tests (${{ matrix.features }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        features: [default, all]
+    env:
+      FEATURE_MODE: ${{ matrix.features }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          key: tests-${{ inputs.rust_toolchain }}-${{ matrix.features }}
+          save-if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+      - uses: taiki-e/install-action@v2.90.3
+        with:
+          tool: nextest@0.9.151
+      - name: Build all targets and run tests including doctests
+        run: |
+          set -euo pipefail
+          features=()
+          if [[ "$FEATURE_MODE" == all ]]; then features+=(--all-features); fi
+          cargo +"$RUST_TOOLCHAIN" build --workspace --all-targets --locked --timings "${features[@]}"
+          cargo +"$RUST_TOOLCHAIN" nextest run --workspace --all-targets --locked "${features[@]}"
+          cargo +"$RUST_TOOLCHAIN" test --workspace --doc --locked "${features[@]}"
+      - name: Upload build timings
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: cargo-timings-${{ matrix.features }}
+          path: target/cargo-timings/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  formal:
+    name: Kani model checking
+    if: inputs.run_formal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      MINIMUM_HARNESSES: ${{ inputs.minimum_harnesses }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+      - name: Install pinned Kani and its supported toolchain
+        run: |
+          cargo +"$RUST_TOOLCHAIN" install --locked kani-verifier --version 0.68.0
+          cargo +"$RUST_TOOLCHAIN" kani setup
+      - name: Check dependency resolution and discover compiled harnesses
+        run: |
+          cargo +"$RUST_TOOLCHAIN" metadata --locked --format-version 1 > /dev/null
+          rm -f kani-list.json
+          cargo +"$RUST_TOOLCHAIN" kani --workspace --all-features list --format json
+      - name: Reject empty or unexpectedly reduced proof coverage
+        shell: python
+        run: |
+          import json
+          import os
+          from pathlib import Path
+
+          minimum = int(os.environ["MINIMUM_HARNESSES"])
+          if minimum < 1:
+              raise SystemExit("minimum_harnesses must be at least 1")
+          report = json.loads(Path("kani-list.json").read_text())
+          if report["file-version"] != "0.1":
+              raise SystemExit("Review the changed Kani report schema")
+          totals = report["totals"]
+          counts = [totals[k] for k in ("standard-harnesses", "contract-harnesses")]
+          if any(type(count) is not int or count < 0 for count in counts):
+              raise SystemExit("Invalid Kani harness counts")
+          count = sum(counts)
+          if count < minimum:
+              raise SystemExit(f"Expected at least {minimum} harnesses, found {count}")
+          print(f"Discovered {count} proof harnesses (minimum {minimum})")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"Kani: {count} compiled proof harnesses; minimum {minimum}.\n")
+      - name: Verify all discovered proof harnesses
+        run: |
+          cargo +"$RUST_TOOLCHAIN" kani --workspace --all-features
+          git diff --exit-code -- Cargo.lock
+      - name: Upload proof inventory
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: kani-proof-inventory
+          path: kani-list.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  deep:
+    name: Miri checks
+    if: inputs.run_deep
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      MIRI_TOOLCHAIN: ${{ inputs.miri_toolchain }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install dated nightly with Miri
+        run: rustup toolchain install "$MIRI_TOOLCHAIN" --profile minimal --component miri,rust-src --no-self-update
+      - name: Run Miri-compatible library tests
+        run: |
+          cargo +"$MIRI_TOOLCHAIN" miri setup
+          cargo +"$MIRI_TOOLCHAIN" miri test --workspace --lib --all-features --locked
+
+  gate:
+    name: Quality gate
+    if: always()
+    needs: [lockfile, quality, tests, formal, deep]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every enabled check to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          RUN_FORMAL: ${{ inputs.run_formal }}
+          RUN_DEEP: ${{ inputs.run_deep }}
+        shell: python
+        run: |
+          import json
+          import os
+
+          jobs = json.loads(os.environ["RESULTS"])
+          expected = {"lockfile": "success", "quality": "success", "tests": "success"}
+          for job, flag in (("formal", "RUN_FORMAL"), ("deep", "RUN_DEEP")):
+              expected[job] = "success" if os.environ[flag] == "true" else "skipped"
+          failures = [f"{job}: {jobs[job]['result']} (expected {result})"
+                      for job, result in expected.items() if jobs[job]["result"] != result]
+          if failures:
+              raise SystemExit("\n".join(failures))
+          print("All enabled quality checks passed")

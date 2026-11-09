@@ -1,0 +1,29 @@
+name: Rust quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+  schedule:
+    - cron: '17 2 * * 1'
+  workflow_dispatch:
+    inputs:
+      run_deep:
+        description: Run Miri checks
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    uses: ./.github/workflows/rust-quality-reusable.yml
+    with:
+      run_formal: true
+      run_deep: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_deep) }}
