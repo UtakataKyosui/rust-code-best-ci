@@ -6,3 +6,7 @@
 /AGENTS.md           @UtakataKyosui
 /CLAUDE.md           @UtakataKyosui
 /docs/proofs.md      @UtakataKyosui
+# テスト・Kani証明はソース内（cfg(test)・cfg(kani)）にあるため、ソースと統合テストも対象にする
+/src/                @UtakataKyosui
+/tests/              @UtakataKyosui
+/Cargo.toml          @UtakataKyosui
