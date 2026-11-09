@@ -1,0 +1,8 @@
+# CI・検証設定の変更は必ずレビューする（Agentによる検証の弱体化を防ぐ）
+/.github/            @UtakataKyosui
+/deny.toml           @UtakataKyosui
+/rustfmt.toml        @UtakataKyosui
+/proofs/             @UtakataKyosui
+/AGENTS.md           @UtakataKyosui
+/CLAUDE.md           @UtakataKyosui
+/docs/proofs.md      @UtakataKyosui
