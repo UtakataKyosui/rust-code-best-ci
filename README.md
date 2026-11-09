@@ -66,6 +66,8 @@ src/lib.rs                                  実装・テスト・Kani証明の�
 | `miri_toolchain` | `nightly-2026-10-25` | Miri用の日付固定nightly |
 | `run_formal` | `true` | Kani検証を実行 |
 | `run_deep` | `false` | Miri検査を実行 |
+| `run_coverage` | `false` | cargo-llvm-covでカバレッジを計測（週次・手動、閾値なし） |
+| `run_mutation` | `false` | cargo-mutantsで変異テスト（手動のみ。検出漏れがあると失敗） |
 | `minimum_harnesses` | `1` | コンパイルで検出される証明ハーネスの最低件数。1以上 |
 
 別リポジトリから直接利用する場合は、`uses`にこのリポジトリのフルコミットSHAを指定します。
@@ -123,7 +125,8 @@ Kani一覧の仕様は[公式RFC](https://model-checking.github.io/kani/rfc/rfcs
   網羅性確認もできます。依存先のコード自体の安全性を保証する機能ではありません。
   外部リポジトリへの再利用Workflow呼び出しはlockfileの固定対象外なので、フルSHAを指定します。
   詳細は[GitHub公式のlockfile仕様](https://docs.github.com/en/actions/concepts/security/workflow-dependency-lockfiles)を参照してください。
-- カバレッジ、mutation testing、sccache、mold、crate差分実行は標準構成に含めません。
+- カバレッジは週次・手動、mutation testingは手動の任意ジョブです（PRの必須検査ではありません）。
+  sccache、mold、crate差分実行は標準構成に含めません。
   プロジェクトで必要な保証と計測結果に応じて追加してください。
 - 既存の`blaze.yml`は手動のビルド速度評価用として保持しています。必須チェックには指定しません。
 
