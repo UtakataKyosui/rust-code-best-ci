@@ -81,7 +81,7 @@ jobs:
         run: |
           cargo +"$RUST_TOOLCHAIN" clippy --workspace --all-targets --locked -- -D warnings
           cargo +"$RUST_TOOLCHAIN" clippy --workspace --all-targets --all-features --locked -- -D warnings
-      - uses: taiki-e/install-action@v2.90.3
+      - uses: taiki-e/install-action@v2.90.6
         with:
           tool: cargo-deny@0.20.2
       - name: Audit dependencies against the committed policy
@@ -107,7 +107,7 @@ jobs:
         with:
           key: tests-${{ inputs.rust_toolchain }}-${{ matrix.features }}
           save-if: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
-      - uses: taiki-e/install-action@v2.90.3
+      - uses: taiki-e/install-action@v2.90.6
         with:
           tool: nextest@0.9.151
       - name: Build all targets and run tests including doctests
@@ -218,7 +218,7 @@ jobs:
         with:
           key: coverage-${{ inputs.rust_toolchain }}
           save-if: false
-      - uses: taiki-e/install-action@v2.90.3
+      - uses: taiki-e/install-action@v2.90.6
         with:
           tool: cargo-llvm-cov@0.9.1,nextest@0.9.151
       - name: Measure coverage (informational, no threshold yet)
@@ -249,7 +249,7 @@ jobs:
         with:
           key: mutation-${{ inputs.rust_toolchain }}
           save-if: false
-      - uses: taiki-e/install-action@v2.90.3
+      - uses: taiki-e/install-action@v2.90.6
         with:
           tool: cargo-mutants@27.1.0,nextest@0.9.151
       - name: Run mutants (missed mutants fail the job)
